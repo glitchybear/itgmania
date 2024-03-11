@@ -175,6 +175,12 @@ static LRESULT CALLBACK GraphicsWindow_WndProc( HWND hWnd, UINT msg, WPARAM wPar
 			CommandLineActions::ToProcess.push_back( args );
 			break;
 		}
+		case WM_NCCALCSIZE:
+		{
+			if (wParam && g_CurrentParams.windowed && g_CurrentParams.bWindowIsFullscreenBorderless)
+				return 0;
+			break;
+		}
 	}
 
 	CHECKPOINT_M( ssprintf("%p, %u, %08x, %08x", hWnd, msg, wParam, lParam) );
@@ -263,10 +269,10 @@ RString GraphicsWindow::SetScreenMode( const VideoModeParams &p )
 
 static int GetWindowStyle( bool bWindowed , bool bWindowIsFullscreenBorderless)
 {
-	if( bWindowed && !bWindowIsFullscreenBorderless )
+	if( bWindowed )
 		return WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_CLIPSIBLINGS;
-	else
-		return WS_POPUP | WS_CLIPCHILDREN | WS_CLIPSIBLINGS;
+	else 
+		return WS_POPUP;
 }
 
 /* Set the final window size, set the window text and icon, and then unhide the
@@ -338,8 +344,10 @@ void GraphicsWindow::CreateGraphicsWindow( const VideoModeParams &p, bool bForce
 
 	RECT WindowRect;
 	SetRect( &WindowRect, 0, 0, p.width, p.height );
-	AdjustWindowRect( &WindowRect, iWindowStyle, FALSE );
-
+	/* AdjustWindowRect provides the wrong coords for fullscreen
+	 * borderless because of the title bar.*/
+	if (!p.bWindowIsFullscreenBorderless)
+		AdjustWindowRect(&WindowRect, iWindowStyle, FALSE);
 	//LOG->Warn( "w = %d, h = %d", p.width, p.height );
 
 	const int iWidth = WindowRect.right - WindowRect.left;
