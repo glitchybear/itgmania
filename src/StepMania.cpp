@@ -170,7 +170,7 @@ static void StoreActualGraphicOptions()
 		PREFSMAN->m_iRefreshRate.Set( params.rate );
 	PREFSMAN->m_bVsync		.Set( params.vsync );
 
-	Dialog::SetWindowed( params.windowed );
+	Dialog::SetWindowed( params.windowed && !params.bWindowIsFullscreenBorderless );
 }
 
 static RageDisplay *CreateDisplay();
