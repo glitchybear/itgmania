@@ -15,7 +15,6 @@
 #include "DirectXHelpers.h"
 
 #include <set>
-#include <tuple>
 
 static const RString g_sClassName = PRODUCT_ID;
 
