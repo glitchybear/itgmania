@@ -82,19 +82,39 @@ static LRESULT CALLBACK GraphicsWindow_WndProc( HWND hWnd, UINT msg, WPARAM wPar
 
 			if( !g_bD3D && !g_CurrentParams.windowed && !g_bRecreatingVideoMode )
 			{
-				/* In OpenGL (not D3D), it's our job to unset and reset the
-				 * full-screen video mode when we focus changes, and to hide
-				 * and show the window. Hiding is done in WM_KILLFOCUS,
-				 * because that's where most other apps seem to do it. */
-				if( g_bHasFocus && !bHadFocus )
+				if (g_CurrentParams.sDisplayId == "")
 				{
-					ChangeDisplaySettingsEx( g_CurrentParams.sDisplayId, &g_FullScreenDevMode, nullptr, CDS_FULLSCREEN, nullptr );
-					ShowWindow( g_hWndMain, SW_SHOWNORMAL );
-					SetWindowPos( g_hWndMain, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE );
+					/* In OpenGL (not D3D), it's our job to unset and reset the
+					* full-screen video mode when we focus changes, and to hide
+					* and show the window. Hiding is done in WM_KILLFOCUS,
+					* because that's where most other apps seem to do it. */
+					if (g_bHasFocus && !bHadFocus)
+					{
+						ChangeDisplaySettingsEx(nullptr, &g_FullScreenDevMode, nullptr, CDS_FULLSCREEN, nullptr);
+						ShowWindow(g_hWndMain, SW_SHOWNORMAL);
+						SetWindowPos(g_hWndMain, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+					}
+					else if (!g_bHasFocus && bHadFocus)
+					{
+						ChangeDisplaySettingsEx(nullptr, nullptr, nullptr, 0, nullptr);
+					}
 				}
-				else if( !g_bHasFocus && bHadFocus )
+				else
 				{
-					ChangeDisplaySettingsEx(g_CurrentParams.sDisplayId, nullptr, nullptr, 0, nullptr);
+					/* In OpenGL (not D3D), it's our job to unset and reset the
+					* full-screen video mode when we focus changes, and to hide
+					* and show the window. Hiding is done in WM_KILLFOCUS,
+					* because that's where most other apps seem to do it. */
+					if (g_bHasFocus && !bHadFocus)
+					{
+						ChangeDisplaySettingsEx(g_CurrentParams.sDisplayId, &g_FullScreenDevMode, nullptr, CDS_FULLSCREEN, nullptr);
+						ShowWindow(g_hWndMain, SW_SHOWNORMAL);
+						SetWindowPos(g_hWndMain, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+					}
+					else if (!g_bHasFocus && bHadFocus)
+					{
+						ChangeDisplaySettingsEx(g_CurrentParams.sDisplayId, nullptr, nullptr, 0, nullptr);
+					}
 				}
 			}
 
@@ -197,32 +217,70 @@ static void AdjustVideoModeParams( VideoModeParams &p )
 	DEVMODE dm;
 	ZERO( dm );
 	dm.dmSize = sizeof(dm);
-	if (!EnumDisplaySettings(p.sDisplayId, ENUM_CURRENT_SETTINGS, &dm))
+	// If DisplayId preference is empty, default to the primary display in Windows
+	if (p.sDisplayId == "")
 	{
-		p.rate = 60;
-		LOG->Warn( "%s", werr_ssprintf(GetLastError(), "EnumDisplaySettings failed").c_str() );
-		return;
-	}
+		// Need to make sure this called at least once with iModeNum=0 in order for Windows to cache display settings
+		EnumDisplaySettings(nullptr, 0, &dm);
+		if (!EnumDisplaySettings(nullptr, ENUM_CURRENT_SETTINGS, &dm))
+		{
+			p.rate = 60;
+			LOG->Warn("%s", werr_ssprintf(GetLastError(), "EnumDisplaySettings failed").c_str());
+			return;
+		}
 
-	/* On a nForce 2 IGP on Windows 98, dm.dmDisplayFrequency sometimes 
-	 * (but not always) is 0.
-	 *
-	 * MSDN: When you call the EnumDisplaySettings function, the 
-	 * dmDisplayFrequency member may return with the value 0 or 1. 
-	 * These values represent the display hardware's default refresh rate. 
-	 * This default rate is typically set by switches on a display card or 
-	 * computer motherboard, or by a configuration program that does not 
-	 * use Win32 display functions such as ChangeDisplaySettings. */
-	if( !(dm.dmFields & DM_DISPLAYFREQUENCY) ||
-		dm.dmDisplayFrequency == 0 ||
-		dm.dmDisplayFrequency == 1 )
-	{
-		p.rate = 60;
-		LOG->Warn( "EnumDisplaySettings doesn't know what the refresh rate is. %d %d %d", dm.dmPelsWidth, dm.dmPelsHeight, dm.dmBitsPerPel );
+		/* On a nForce 2 IGP on Windows 98, dm.dmDisplayFrequency sometimes
+		 * (but not always) is 0.
+		 *
+		 * MSDN: When you call the EnumDisplaySettings function, the
+		 * dmDisplayFrequency member may return with the value 0 or 1.
+		 * These values represent the display hardware's default refresh rate.
+		 * This default rate is typically set by switches on a display card or
+		 * computer motherboard, or by a configuration program that does not
+		 * use Win32 display functions such as ChangeDisplaySettings. */
+		if (!(dm.dmFields & DM_DISPLAYFREQUENCY) ||
+			dm.dmDisplayFrequency == 0 ||
+			dm.dmDisplayFrequency == 1)
+		{
+			p.rate = 60;
+			LOG->Warn("EnumDisplaySettings doesn't know what the refresh rate is. %d %d %d", dm.dmPelsWidth, dm.dmPelsHeight, dm.dmBitsPerPel);
+		}
+		else
+		{
+			p.rate = dm.dmDisplayFrequency;
+		}
 	}
 	else
 	{
-		p.rate = dm.dmDisplayFrequency;
+		// Need to make sure this called at least once with iModeNum=0 in order for Windows to cache display settings
+		EnumDisplaySettings(p.sDisplayId, 0, &dm);
+		if (!EnumDisplaySettings(p.sDisplayId, ENUM_CURRENT_SETTINGS, &dm))
+		{
+			p.rate = 60;
+			LOG->Warn("%s", werr_ssprintf(GetLastError(), "EnumDisplaySettings failed").c_str());
+			return;
+		}
+
+		/* On a nForce 2 IGP on Windows 98, dm.dmDisplayFrequency sometimes
+		 * (but not always) is 0.
+		 *
+		 * MSDN: When you call the EnumDisplaySettings function, the
+		 * dmDisplayFrequency member may return with the value 0 or 1.
+		 * These values represent the display hardware's default refresh rate.
+		 * This default rate is typically set by switches on a display card or
+		 * computer motherboard, or by a configuration program that does not
+		 * use Win32 display functions such as ChangeDisplaySettings. */
+		if (!(dm.dmFields & DM_DISPLAYFREQUENCY) ||
+			dm.dmDisplayFrequency == 0 ||
+			dm.dmDisplayFrequency == 1)
+		{
+			p.rate = 60;
+			LOG->Warn("EnumDisplaySettings doesn't know what the refresh rate is. %d %d %d", dm.dmPelsWidth, dm.dmPelsHeight, dm.dmBitsPerPel);
+		}
+		else
+		{
+			p.rate = dm.dmDisplayFrequency;
+		}
 	}
 }
 
@@ -230,40 +288,72 @@ static void AdjustVideoModeParams( VideoModeParams &p )
  * The refresh setting may be ignored. */
 RString GraphicsWindow::SetScreenMode( const VideoModeParams &p )
 {
-	if( p.windowed )
-	{
-		// We're going windowed. If we were previously fullscreen, reset.
-		ChangeDisplaySettingsEx( p.sDisplayId, nullptr, nullptr, 0, nullptr );
-
-		return RString();
-	}
-
 	DEVMODE DevMode;
-	ZERO( DevMode );
+	ZERO(DevMode);
 	DevMode.dmSize = sizeof(DEVMODE);
 	DevMode.dmPelsWidth = p.width;
 	DevMode.dmPelsHeight = p.height;
 	DevMode.dmBitsPerPel = p.bpp;
 	DevMode.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT | DM_BITSPERPEL;
 
-	if( p.rate != REFRESH_DEFAULT )
+	// If DisplayId preference is empty, default to the primary display in Windows
+	if (p.sDisplayId == "")
 	{
-		DevMode.dmDisplayFrequency = p.rate;
-		DevMode.dmFields |= DM_DISPLAYFREQUENCY;
-	}
-	ChangeDisplaySettingsEx(p.sDisplayId, nullptr, nullptr, 0, nullptr);
+		if (p.windowed)
+		{
+			// We're going windowed. If we were previously fullscreen, reset.
+			ChangeDisplaySettingsEx(nullptr, nullptr, nullptr, 0, nullptr);
 
-	int ret = ChangeDisplaySettingsEx( p.sDisplayId, &DevMode, nullptr, CDS_FULLSCREEN, nullptr );
-	if( ret != DISP_CHANGE_SUCCESSFUL && (DevMode.dmFields & DM_DISPLAYFREQUENCY) )
+			return RString();
+		}
+
+		if (p.rate != REFRESH_DEFAULT)
+		{
+			DevMode.dmDisplayFrequency = p.rate;
+			DevMode.dmFields |= DM_DISPLAYFREQUENCY;
+		}
+		ChangeDisplaySettingsEx(nullptr, nullptr, nullptr, 0, nullptr);
+
+		int ret = ChangeDisplaySettingsEx(nullptr, &DevMode, nullptr, CDS_FULLSCREEN, nullptr);
+		if (ret != DISP_CHANGE_SUCCESSFUL && (DevMode.dmFields & DM_DISPLAYFREQUENCY))
+		{
+			DevMode.dmFields &= ~DM_DISPLAYFREQUENCY;
+			ret = ChangeDisplaySettingsEx(nullptr, &DevMode, nullptr, CDS_FULLSCREEN, nullptr);
+		}
+
+		// XXX: append error
+		if (ret != DISP_CHANGE_SUCCESSFUL)
+			return "Couldn't set screen mode";
+	}
+	else
 	{
-		DevMode.dmFields &= ~DM_DISPLAYFREQUENCY;
-		ret = ChangeDisplaySettingsEx( p.sDisplayId, &DevMode, nullptr, CDS_FULLSCREEN, nullptr );
+		if (p.windowed)
+		{
+			// We're going windowed. If we were previously fullscreen, reset.
+			ChangeDisplaySettingsEx(p.sDisplayId, nullptr, nullptr, 0, nullptr);
+
+			return RString();
+		}
+
+		if (p.rate != REFRESH_DEFAULT)
+		{
+			DevMode.dmDisplayFrequency = p.rate;
+			DevMode.dmFields |= DM_DISPLAYFREQUENCY;
+		}
+		ChangeDisplaySettingsEx(p.sDisplayId, nullptr, nullptr, 0, nullptr);
+
+		int ret = ChangeDisplaySettingsEx(p.sDisplayId, &DevMode, nullptr, CDS_FULLSCREEN, nullptr);
+		if (ret != DISP_CHANGE_SUCCESSFUL && (DevMode.dmFields & DM_DISPLAYFREQUENCY))
+		{
+			DevMode.dmFields &= ~DM_DISPLAYFREQUENCY;
+			ret = ChangeDisplaySettingsEx(p.sDisplayId, &DevMode, nullptr, CDS_FULLSCREEN, nullptr);
+		}
+
+		// XXX: append error
+		if (ret != DISP_CHANGE_SUCCESSFUL)
+			return "Couldn't set screen mode";
 	}
-
-	// XXX: append error
-	if( ret != DISP_CHANGE_SUCCESSFUL )
-		return "Couldn't set screen mode";
-
+	
 	g_FullScreenDevMode = DevMode;
 	return RString();
 }
@@ -515,14 +605,29 @@ void GraphicsWindow::Shutdown()
 {
 	DestroyGraphicsWindow();
 
-	/* Return to the desktop resolution, if needed.
+	// If DisplayId preference is empty, default to the primary display in Windows
+	if (g_CurrentParams.sDisplayId == "")
+	{
+		/* Return to the desktop resolution, if needed.
 	 * It'd be nice to not do this: Windows will do it when we quit, and if
 	 * we're shutting down OpenGL to try D3D, this will cause extra mode
 	 * switches. However, we need to do this before displaying dialogs. */
-	ChangeDisplaySettingsEx( g_CurrentParams.sDisplayId, nullptr, nullptr, 0, nullptr );
+		ChangeDisplaySettingsEx(nullptr, nullptr, nullptr, 0, nullptr);
 
-	AppInstance inst;
-	UnregisterClass( g_sClassName, inst );
+		AppInstance inst;
+		UnregisterClass(g_sClassName, inst);
+	}
+	else
+	{
+		/* Return to the desktop resolution, if needed.
+	 * It'd be nice to not do this: Windows will do it when we quit, and if
+	 * we're shutting down OpenGL to try D3D, this will cause extra mode
+	 * switches. However, we need to do this before displaying dialogs. */
+		ChangeDisplaySettingsEx(g_CurrentParams.sDisplayId, nullptr, nullptr, 0, nullptr);
+
+		AppInstance inst;
+		UnregisterClass(g_sClassName, inst);
+	}
 }
 
 HDC GraphicsWindow::GetHDC()
